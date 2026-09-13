@@ -7,7 +7,7 @@ first successful call.
 ## Prerequisites
 
 - Robinhood Chain RPC and a funded deployment key.
-- Canonical V4 `PoolManager` and `PositionManager` addresses for chain ID 46630.
+- Canonical V4 `PoolManager` and `PositionManager` addresses for chain ID 4663.
 - Permit2 address used by that PositionManager.
 - A native/USD reference contract implementing `ILaunchPriceOracle`. It is read
   only when a token launches; no oracle is used during trading.

@@ -31,7 +31,7 @@ export async function connectWallet() {
   const provider = new ethers.BrowserProvider(window.ethereum);
   const accounts = await provider.send("eth_requestAccounts", []);
   const network = await provider.getNetwork();
-  if (network.chainId !== 4663n) throw new Error("Switch your wallet to Robinhood Chain (46630) before connecting.");
+  if (network.chainId !== 4663n) throw new Error("Switch your wallet to Robinhood Chain (4663) before connecting.");
   const signer = await provider.getSigner(accounts[0]);
   const account = ethers.getAddress(accounts[0]);
   return { account, client: new ProtoClient({ provider, signer, deployment }) };

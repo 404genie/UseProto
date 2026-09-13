@@ -11,7 +11,7 @@ import {
   VESTING_ABI
 } from "./abis.mjs";
 
-export const ROBINHOOD_CHAIN_ID = 46630n;
+export const ROBINHOOD_CHAIN_ID = 4663n;
 export const MAX_UINT256 = (1n << 256n) - 1n;
 export const BUY_SQRT_PRICE_LIMIT_X96 = 4_295_128_740n;
 export const SELL_SQRT_PRICE_LIMIT_X96 =

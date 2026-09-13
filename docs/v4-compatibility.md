@@ -17,7 +17,7 @@ exact target RPC that:
    exists.
 
 On 2026-09-10, a read-only probe against Robinhood Chain testnet chain ID
-`46630` successfully estimated contract-creation execution containing `PUSH0`,
+`4663` successfully estimated contract-creation execution containing `PUSH0`,
 `TSTORE`, and `TLOAD` at block `117054104`. The repository therefore targets `cancun`, and the
 testnet opcode gate is cleared. The probe must be repeated against the exact
 RPC immediately before deployment and independently for mainnet; silently

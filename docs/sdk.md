@@ -1,7 +1,7 @@
 # Proto SDK
 
 `/sdk/index.mjs` is the first client integration layer for Proto V1. It uses
-ethers v6 and only targets Robinhood Chain (chain ID `46630`). The SDK keeps
+ethers v6 and only targets Robinhood Chain (chain ID `4663`). The SDK keeps
 deployment addresses in a manifest and centralizes signer/account resolution
 so a frontend does not duplicate protected-trade rules.
 

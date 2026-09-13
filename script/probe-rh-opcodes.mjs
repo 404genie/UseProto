@@ -3,7 +3,7 @@ import { JsonRpcProvider } from "ethers";
 const rpcUrl = process.env.RH_RPC_URL ?? "https://rpc.testnet.chain.robinhood.com";
 const provider = new JsonRpcProvider(rpcUrl);
 const network = await provider.getNetwork();
-if (network.chainId !== 46630n) throw new Error(`expected chain 46630, received ${network.chainId}`);
+if (network.chainId !== 4663n) throw new Error(`expected chain 4663, received ${network.chainId}`);
 
 const probes = {
   PUSH0: "0x5f5ff3",
