@@ -1,6 +1,6 @@
 import http from "node:http";
 import process from "node:process";
-import { Interface, JsonRpcProvider } from "ethers";
+import { ethers, JsonRpcProvider } from "ethers";
 import { openStore } from "./store.mjs";
 
 const RPC_URL = process.env.RH_RPC_URL || process.env.VITE_RH_RPC_URL;
@@ -24,7 +24,7 @@ if (!RPC_URL || !CORE_ADDRESS || !ROUTER_ADDRESS) {
 }
 
 const chainId = Number(process.env.CHAIN_ID ?? "4663");
-const provider = new JsonRpcProvider(RH_RPC_URL, chainId);
+const provider = new JsonRpcProvider(RPC_URL, chainId);
 const store = openStore(STATE_PATH);
 const state = store.state;
 const core = ethers.getAddress(CORE_ADDRESS);
