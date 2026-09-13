@@ -38,10 +38,7 @@ export async function connectWallet() {
 }
 
 const FALLBACK_TOKENS = [
-  { token: "0x9DD2fa4B513c0DC806E6795Be7FB1B97fe916E1b", curve: "0xECA5344c3A7b0FE473F14961B8458A35AE983418", symbol: "PSMOKE", name: "Proto Mainnet Smoke", image: "/proto-mark.png", age: "just now", marketCap: 2500, volumeAllTime: 0, volume1h: 0, volume5m: 0, status: "curve", creator: "0x533B22BbB18A1f4dd7B6202bcaF83c69C76E055d", change: 0 },
-  { token: "0x1111111111111111111111111111111111111111", symbol: "NOVA", name: "Nova Protocol", image: "/proto-mark.png", age: "11m", marketCap: 18420, volumeAllTime: 9240, volume1h: 3120, volume5m: 880, status: "curve", creator: "0x91c2a45d3b1b8c5dd6f1e14e0112b73516f2c31a", change: 9.7 },
-  { token: "0x2222222222222222222222222222222222222222", symbol: "MINT", name: "Mint Club", image: "/proto-mark.png", age: "1d", marketCap: 56200, volumeAllTime: 118900, volume1h: 8700, volume5m: 2100, status: "graduated", creator: "0x602e8f0e4a0ea72168b3c9d8f2c8bead6dff9d10", change: -3.2 },
-  { token: "0x3333333333333333333333333333333333333333", symbol: "BLOB", name: "Blob Energy", image: "/proto-mark.png", age: "3d", marketCap: 119800, volumeAllTime: 422000, volume1h: 18200, volume5m: 5200, status: "graduated", creator: "0x338b1fcab2ea82b0b053ad7bd6f6e9a9e5f7cd21", change: 26.8 }
+  { token: "0x9DD2fa4B513c0DC806E6795Be7FB1B97fe916E1b", curve: "0xECA5344c3A7b0FE473F14961B8458A35AE983418", symbol: "PSMOKE", name: "Proto Mainnet Smoke", image: "/proto-mark.png", age: "just now", marketCap: 2500, volumeAllTime: 0, volume1h: 0, volume5m: 0, status: "curve", creator: "0x533B22BbB18A1f4dd7B6202bcaF83c69C76E055d", change: 0 }
 ];
 
 async function indexed(path, fallback) {
