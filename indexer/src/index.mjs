@@ -23,7 +23,8 @@ if (!RPC_URL || !CORE_ADDRESS || !ROUTER_ADDRESS) {
   throw new Error("RH_RPC_URL, PROTO_CORE, and PROTO_ROUTER are required");
 }
 
-const provider = new ethers.JsonRpcProvider(RPC_URL, 4663);
+const chainId = Number(process.env.CHAIN_ID ?? "4663");
+const provider = new JsonRpcProvider(RPC_URL, chainId);
 const store = openStore(STATE_PATH);
 const state = store.state;
 const core = ethers.getAddress(CORE_ADDRESS);
