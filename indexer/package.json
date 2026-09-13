@@ -1,0 +1,13 @@
+{
+  "name": "proto-indexer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env src/index.mjs",
+    "dev": "node --env-file=.env --watch src/index.mjs"
+  },
+  "dependencies": {
+    "ethers": "6.17.0"
+  }
+}

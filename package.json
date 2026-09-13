@@ -1,0 +1,30 @@
+{
+  "name": "proto",
+  "version": "1.0.0",
+  "description": "Clean-room implementation of Proto's native-quote, constant-product-style bonding curve.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "simulate": "node simulation/economic-sweep.mjs",
+    "mine:hook": "node script/mine-hook-salt.mjs",
+    "probe:robinhood": "node script/probe-rh-opcodes.mjs",
+    "test": "node --test test-js/*.test.mjs",
+    "test:sdk": "node --test test-js/sdk.test.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@foundry-rs/forge": "^1.7.1",
+    "ethers": "6.17.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "@uniswap/v4-core": "1.0.2",
+    "@uniswap/v4-periphery": "1.0.3"
+  }
+}

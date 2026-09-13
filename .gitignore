@@ -1,0 +1,8 @@
+cache/
+out/
+node_modules/
+lib/
+simulation/output/
+frontend/dist/
+indexer/node_modules/
+indexer/data/

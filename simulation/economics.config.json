@@ -1,0 +1,12 @@
+{
+  "totalSupplyTokens": 1000000000,
+  "targetInitialMarketCapUsd": 2000,
+  "quoteUsdScenarios": [1500, 2000, 2500, 3000, 4000, 5000],
+  "virtualTokenRatiosBps": [50, 100, 250, 500, 1000, 2000],
+  "feeBpsCandidates": [50, 100, 150],
+  "graduationReserveCandidatesNative": [5, 10, 20, 25],
+  "referenceQuoteUsd": 3000,
+  "tradeSizesNative": [0.01, 0.1, 0.5, 1, 5],
+  "simulationSeed": 424242,
+  "randomTradeCount": 100000
+}

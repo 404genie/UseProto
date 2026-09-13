@@ -1,0 +1,34 @@
+{
+  "chainId": 46630,
+  "network": "robinhood-testnet",
+  "deployer": "",
+  "deployedAtBlock": null,
+  "external": {
+    "poolManager": "",
+    "positionManager": "",
+    "permit2": "",
+    "launchPriceOracle": ""
+  },
+  "proto": {
+    "core": "",
+    "factory": "",
+    "router": "",
+    "rewardEngine": "",
+    "feeController": "",
+    "vestingVault": "",
+    "graduationManager": "",
+    "graduationAdapter": "",
+    "liquidityLocker": "",
+    "hookCreate2Deployer": "",
+    "hook": ""
+  },
+  "hookSalt": "",
+  "verification": {
+    "wiring": false,
+    "testLaunch": false,
+    "curveBuySell": false,
+    "graduation": false,
+    "lockedPosition": false,
+    "v4BuySell": false
+  }
+}

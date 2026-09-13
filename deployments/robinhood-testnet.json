@@ -1,0 +1,35 @@
+{
+  "chainId": 46630,
+  "network": "robinhood-testnet",
+  "deployer": "0xd3e65218345AE57deBb8585dfb759763d0Fd6e78",
+  "deployedAtBlock": 118288021,
+  "external": {
+    "poolManager": "0x24A9b02EA464B5c2c9bF7C2C166de8E718fAdaaB",
+    "positionManager": "0x4a29cD942E39eD2204957A376B3A695c7019743b",
+    "permit2": "0x8937aDfc5714d325E55D2f7896CF2a8EDB61da1d",
+    "wrappedNative": "0x699aB6f966f14d1ab5B495d92205dE9f4e746164",
+    "launchPriceOracle": "0xBA15aAC54A954B30194Cad48F9888693DECC7565"
+  },
+  "proto": {
+    "core": "0xFe90351A8bA46eC552A85A1F07628690dbf9AEE7",
+    "factory": "0xd711cBDfa3Fecfc3DC3e99bea6313c0a52aC5BAA",
+    "router": "0x820234d85e2d197ee066CA00512e87c3D20F520c",
+    "rewardEngine": "0x007E033Bb6F52326AB61dC48e011f9698bD144B4",
+    "feeController": "0x5efA300548750Aa63b15f9B123c1b896657fD199",
+    "vestingVault": "0x4b04bc845221B7A1fdf76e603D2274Bb3322b130",
+    "graduationManager": "0xf5d2061475D2b06588ab9E17F96F0c855e0eEd84",
+    "graduationAdapter": "0x500B3049CE8E3281E08Ee783CF860461dA6E3F5b",
+    "liquidityLocker": "0xd34E3899CFf69B91aa335e29a0958cE5a4F77757",
+    "hookCreate2Deployer": "0x7eF5b36604C4FbE4F314A74a0eD2613614Ea825f",
+    "hook": "0xF4cbfc22bCf48c438Bd29933613d22711B842080"
+  },
+  "hookSalt": "0x0000000000000000000000000000000000000000000000000000000000001873",
+  "verification": {
+    "wiring": true,
+    "testLaunch": true,
+    "curveBuySell": true,
+    "graduation": true,
+    "lockedPosition": true,
+    "v4BuySell": true
+  }
+}
