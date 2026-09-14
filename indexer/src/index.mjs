@@ -3,7 +3,7 @@ import process from "node:process";
 import { ethers, JsonRpcProvider } from "ethers";
 import { openStore } from "./store.mjs";
 
-const RPC_URL = process.env.RH_RPC_URL || process.env.VITE_RH_RPC_URL;
+const RPC_URL = process.env.INDEXER_RPC_URL || process.env.RH_RPC_URL || process.env.VITE_RH_RPC_URL;
 const CORE_ADDRESS = process.env.PROTO_CORE;
 const ROUTER_ADDRESS = process.env.PROTO_ROUTER;
 const GRADUATION_MANAGER = process.env.GRADUATION_MANAGER || "";
@@ -356,7 +356,7 @@ async function processCurveLogs(logs, curveToToken, curveActors) {
 }
 
 async function sync() {
-  const latest = await provider.getBlockNumber();
+  const latest = await withRetry(() => provider.getBlockNumber(), "getBlockNumber");
   const startBlock = state.lastBlock == null ? Number(process.env.PROTO_INDEXER_START_BLOCK || Math.max(0, latest - 5_000)) : state.lastBlock + 1;
   if (startBlock > latest) return { latest, indexedThrough: state.lastBlock, discovered: Object.keys(state.tokens).length, scanned: 0 };
   console.log(`sync ${startBlock}-${latest}: scanning core/router logs`);
