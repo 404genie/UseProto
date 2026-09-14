@@ -7,3 +7,4 @@ frontend/dist/
 indexer/node_modules/
 indexer/data/
 .env
+.env.local
