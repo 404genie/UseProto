@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Pool } from "pg";
+import pg from "pg";
+
+const { Pool } = pg;
 
 const EMPTY_STATE = { lastBlock: null, tokens: {}, trades: [] };
 
@@ -37,7 +39,7 @@ function openFileStore(filePath) {
 }
 
 function postgresSsl(databaseUrl) {
-  return /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false };
+  return /localhost|127\\.0\\.0\\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false };
 }
 
 async function openPostgresStore(databaseUrl) {
