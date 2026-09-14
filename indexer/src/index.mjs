@@ -98,7 +98,7 @@ function releaseRpcSlot() {
 async function withRetry(operation, label) {
   let lastError;
   for (let attempt = 0; attempt <= RPC_RETRIES; attempt += 1) {
-    const release = await acquireRpcSlot();
+    await acquireRpcSlot();
     try {
       return await operation();
     } catch (error) {
@@ -110,7 +110,7 @@ async function withRetry(operation, label) {
       console.warn(`rpc retry ${label} (${attempt + 1}/${RPC_RETRIES}) in ${delay}ms: ${message}`);
       await sleep(delay);
     } finally {
-      release();
+      releaseRpcSlot();
     }
   }
   throw lastError;
