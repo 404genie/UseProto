@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { Pool } from "pg";
+import pg from "pg";
+
+const { Pool } = pg;
 
 const EMPTY_STATE = { lastBlock: null, tokens: {}, trades: [] };
 
