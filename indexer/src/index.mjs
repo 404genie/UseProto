@@ -152,8 +152,13 @@ function parseMetadata(metadataURI) {
 
 function tokenRecord(token) {
   const key = token.toLowerCase();
-  state.tokens[key] ||= { token, trades: [], volumeAllTimeWei: "0", volume1hWei: "0", volume5mWei: "0", lifecycle: 1 };
-  return state.tokens[key];
+  state.tokens[key] ||= { token, trades: [], volumeAllTimeWei: "0", volume1hWei: "0", volume5mWei: "0", lifecycle: 1, initialPriceUsd: null };
+  const record = state.tokens[key];
+  if (record.initialPriceUsd == null) {
+    const firstTrade = (record.trades || []).find((trade) => Number(trade.priceUsd) > 0);
+    if (firstTrade) record.initialPriceUsd = Number(firstTrade.priceUsd);
+  }
+  return record;
 }
 
 function ageLabel(timestamp) {
@@ -259,6 +264,7 @@ async function addTrade(record, trade) {
   const priceUsd = tokenAmount > 0n
     ? Number(ethers.formatEther(quoteWei)) / Number(ethers.formatUnits(tokenAmount, 18)) * Number(launchPrice) / 1e8
     : 0;
+  if (record.initialPriceUsd == null && priceUsd > 0) record.initialPriceUsd = priceUsd;
   const tradeKey = `${trade.txHash}:${trade.logIndex ?? 0}`;
   if (record.trades.some((item) => item.tradeKey === tradeKey)) return;
   record.trades.push({
@@ -442,7 +448,10 @@ function publicToken(record) {
   if (record.creator) result.creator = ethers.getAddress(record.creator);
   if (record.curve) result.curve = ethers.getAddress(record.curve);
   result.status = record.lifecycle === 3 ? "graduated" : "curve";
-  result.change = 0;
+  const firstPrice = Number(record.initialPriceUsd || record.trades?.find((trade) => Number(trade.priceUsd) > 0)?.priceUsd || 0);
+  const latestPrice = Number([...(record.trades || [])].reverse().find((trade) => Number(trade.priceUsd) > 0)?.priceUsd || 0);
+  result.change = firstPrice > 0 && latestPrice > 0 ? ((latestPrice - firstPrice) / firstPrice) * 100 : 0;
+  delete result.initialPriceUsd;
   return result;
 }
 

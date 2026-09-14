@@ -99,6 +99,48 @@ function TradeActivity({ trades = [], symbol }) {
   return <section className="activity-panel"><div className="section-heading"><h2>Recent activity</h2><span>{trades.length}</span></div>{trades.length ? <div className="activity-list"><div className="activity-header"><span>Type</span><span>Trader</span><span>Amount</span><span>Time</span></div>{trades.slice(0, 20).map((trade, index) => <div className="activity-row" key={`${trade.txHash || "trade"}-${index}`}><strong className={trade.side === "buy" ? "positive" : "negative"}>{trade.side === "buy" ? "Buy" : "Sell"}</strong><a href={`#/profile/${trade.trader}`} className="activity-trader">{trade.trader ? shorten(trade.trader) : "—"}</a><span>{tokenAmount(trade.tokenAmount)} {symbol}</span><span>{tradeTime(trade.timestamp)}</span></div>)}</div> : <div className="empty-state">Buys and sells will appear here as this token trades.</div>}</section>;
 }
 
+function VestedTokenClaim({ token, txClient, onConnect }) {
+  const [vesting, setVesting] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const reader = txClient || client;
+      if (!reader || !token) return;
+      try {
+        const account = await reader.account();
+        if (!account) { if (active) setVesting(null); return; }
+        const next = await reader.getVestingState(token.token, account, 50n);
+        if (active) setVesting(next);
+      } catch { if (active) setVesting(null); }
+    };
+    load();
+    const timer = setInterval(load, 20_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [token, txClient]);
+  const claim = async () => {
+    if (!txClient) return onConnect();
+    setBusy(true); setMessage("");
+    try {
+      const account = await txClient.account();
+      const current = await txClient.getVestingState(token.token, account, 50n);
+      if (current.claimable === 0n) throw new Error("No vested tokens are claimable yet.");
+      const tx = await txClient.claimVested(token.token, 50n);
+      await tx.wait();
+      setVesting(await txClient.getVestingState(token.token, account, 50n));
+      setMessage("Vested tokens claimed.");
+    } catch (error) { setMessage(error.shortMessage || error.message || "Claim failed"); }
+    finally { setBusy(false); }
+  };
+  const claimable = vesting?.claimable ?? null;
+  const committed = vesting?.committed ?? null;
+  const hasClaimable = claimable != null && claimable > 0n;
+  const amountLabel = claimable == null ? "—" : `${tokenAmount(claimable)} ${token.symbol}`;
+  const committedLabel = committed == null ? "—" : `${tokenAmount(committed)} ${token.symbol}`;
+  return <section className="vesting-panel"><div className="section-heading"><h2>Vested tokens</h2><span>30-day linear</span></div><div className="vesting-card"><div className="vesting-balances"><div><span>Claimable now</span><strong>{amountLabel}</strong></div><div><span>Still vesting</span><strong>{committedLabel}</strong></div></div><button className="primary-button" onClick={claim} disabled={busy || Boolean(txClient && !hasClaimable)}>{busy ? "Claiming…" : txClient ? "Claim vested tokens" : "Connect wallet to claim"}</button></div>{message && <div className="form-message">{message}</div>}<p className="vesting-note">Claims are limited by your 2% liquid-token capacity. Any remaining amount stays vested.</p></section>;
+}
+
 function Trade({ tokenAddress, txClient, onOpenProfile, onConnect }) {
   const [token, setToken] = useState(null);
   const [mode, setMode] = useState("buy");
@@ -180,7 +222,7 @@ function Trade({ tokenAddress, txClient, onOpenProfile, onConnect }) {
     } catch (error) { setMessage(error.shortMessage || error.message || "Trade failed"); } finally { setBusy(false); }
   };
   const output = estimate == null ? "0.00" : mode === "buy" ? Number(ethers.formatUnits(estimate, 18)).toLocaleString(undefined, { maximumFractionDigits: 2 }) : Number(ethers.formatEther(estimate)).toLocaleString(undefined, { maximumFractionDigits: 5 });
-  return <main className="page trade-page"><div className="trade-breadcrumb"><a href="#/explore">Explore</a><span>/</span><strong>${token.symbol}</strong></div><section className="trade-heading"><div className="trade-token-title"><TokenImage token={token} large /><div><div className="eyebrow">{token.status === "graduated" ? "UNISWAP V4 MARKET" : "PROTO BONDING CURVE"}</div><h1>{token.name} <span>${token.symbol}</span></h1><button className="ca-button" onClick={copy}>CA {shorten(token.token)} <span>{copied ? "Copied" : "▣"}</span></button></div></div><button className="creator-link" onClick={() => onOpenProfile(token.creator)}><span className="mini-avatar"><img src="/proto-mark.png" alt="" /></span> Created by {shorten(token.creator)} ↗</button></section><div className="trade-layout"><section className="chart-panel"><div className="chart-stats"><div><span>Market cap</span><strong>{money(token.marketCap)}</strong></div><div><span>24h volume</span><strong>{money(token.volume1h * 10)}</strong></div><div><span>Token age</span><strong>{age(token.age)}</strong></div><div className={token.change >= 0 ? "positive" : "negative"}><span>All time</span><strong>{token.change >= 0 ? "+" : ""}{token.change.toFixed(1)}%</strong></div></div><LineChart points={token.chart} /></section><section className="swap-panel"><div className="swap-tabs"><button className={mode === "buy" ? "active" : ""} onClick={() => { setMode("buy"); setEstimate(null); }}>Buy</button><button className={mode === "sell" ? "active" : ""} onClick={() => { setMode("sell"); setEstimate(null); }}>Sell</button></div><div className="swap-caption">{mode === "buy" ? "Buy with native ETH" : "Sell liquid tokens"}</div><label className="swap-input"><span>{mode === "buy" ? "You pay" : "You sell"}</span><input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /><strong>{mode === "buy" ? "ETH" : token.symbol}</strong></label>{mode === "sell" && <div className="quick-sell" aria-label="Quick sell percentage"><span>Quick sell</span>{[25, 50, 75, 100].map((percent) => <button type="button" key={percent} disabled={!walletBalance} onClick={() => setAmount(ethers.formatUnits(walletBalance * BigInt(percent) / 100n, 18))}>{percent}%</button>)}</div>}<div className="swap-arrow">↓</div><div className="swap-input output"><span>Estimated receive</span><strong>{output}</strong><strong>{mode === "buy" ? token.symbol : "ETH"}</strong></div><div className="swap-details"><span>Proto fee <b>1%</b></span><span>Liquid allocation <b>up to 2%</b></span><span>Slippage protection <b>2% buffer</b></span></div>{message && <div className="form-message">{message}</div>}<button className="primary-button full" onClick={submit} disabled={busy}>{busy ? "Confirming…" : txClient ? `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}` : `Connect wallet to ${mode}`}</button><p className="swap-note">Excess allocation is automatically committed to 30-day vesting.</p></section></div><TradeActivity trades={token.recentTrades} symbol={token.symbol} /></main>;
+  return <main className="page trade-page"><div className="trade-breadcrumb"><a href="#/explore">Explore</a><span>/</span><strong>${token.symbol}</strong></div><section className="trade-heading"><div className="trade-token-title"><TokenImage token={token} large /><div><div className="eyebrow">{token.status === "graduated" ? "UNISWAP V4 MARKET" : "PROTO BONDING CURVE"}</div><h1>{token.name} <span>${token.symbol}</span></h1><button className="ca-button" onClick={copy}>CA {shorten(token.token)} <span>{copied ? "Copied" : "▣"}</span></button></div></div><button className="creator-link" onClick={() => onOpenProfile(token.creator)}><span className="mini-avatar"><img src="/proto-mark.png" alt="" /></span> Created by {shorten(token.creator)} ↗</button></section><div className="trade-layout"><section className="chart-panel"><div className="chart-stats"><div><span>Market cap</span><strong>{money(token.marketCap)}</strong></div><div><span>All-time volume</span><strong>{money(token.volumeAllTime)}</strong></div><div><span>Token age</span><strong>{age(token.age)}</strong></div><div className={token.change >= 0 ? "positive" : "negative"}><span>All time</span><strong>{token.change >= 0 ? "+" : ""}{Number(token.change || 0).toFixed(1)}%</strong></div></div><LineChart points={token.chart} /></section><section className="swap-panel"><div className="swap-tabs"><button className={mode === "buy" ? "active" : ""} onClick={() => { setMode("buy"); setEstimate(null); }}>Buy</button><button className={mode === "sell" ? "active" : ""} onClick={() => { setMode("sell"); setEstimate(null); }}>Sell</button></div><div className="swap-caption">{mode === "buy" ? "Buy with native ETH" : "Sell liquid tokens"}</div><label className="swap-input"><span>{mode === "buy" ? "You pay" : "You sell"}</span><input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /><strong>{mode === "buy" ? "ETH" : token.symbol}</strong></label>{mode === "sell" && <div className="quick-sell" aria-label="Quick sell percentage"><span>Quick sell</span>{[25, 50, 75, 100].map((percent) => <button type="button" key={percent} disabled={!walletBalance} onClick={() => setAmount(ethers.formatUnits(walletBalance * BigInt(percent) / 100n, 18))}>{percent}%</button>)}</div>}<div className="swap-arrow">↓</div><div className="swap-input output"><span>Estimated receive</span><strong>{output}</strong><strong>{mode === "buy" ? token.symbol : "ETH"}</strong></div><div className="swap-details"><span>Proto fee <b>1%</b></span><span>Liquid allocation <b>up to 2%</b></span><span>Slippage protection <b>2% buffer</b></span></div>{message && <div className="form-message">{message}</div>}<button className="primary-button full" onClick={submit} disabled={busy}>{busy ? "Confirming…" : txClient ? `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}` : `Connect wallet to ${mode}`}</button><p className="swap-note">Excess allocation is automatically committed to 30-day vesting.</p></section></div><VestedTokenClaim token={token} txClient={txClient} onConnect={onConnect} /><TradeActivity trades={token.recentTrades} symbol={token.symbol} /></main>;
 }
 
 function CreatorFeeClaim({ address, txClient, onConnect }) {

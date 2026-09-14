@@ -1,0 +1,40 @@
+{
+  "protocol": "Proto V1",
+  "network": "Robinhood Chain Mainnet",
+  "chainId": 4663,
+  "nativeAsset": "ETH",
+  "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "explorerUrl": "https://robinhoodchain.blockscout.com",
+  "contracts": {
+    "core": "0x9227F8464808ff6EfF2B710c86A1af0Ed6BbCA0F",
+    "factory": "0xcE6381A54Bdf51c71efAdD61eff2270c75F48454",
+    "router": "0x43933426c3D2809413564bD3F93Cf4B3ceA3f000",
+    "rewardEngine": "0x72c33b319D2bf9494b3E13815cf319d119322429",
+    "feeController": "0x7168f7B129AFF719F63d89c1D9D4aBf4D750635A",
+    "vestingVault": "0x1D56e23b1829ed5f2309467e7AF2515422FC8183",
+    "graduationManager": "0xf5fB52CB0828C06504f02252CBb803256b749534",
+    "graduationAdapter": "0x9cD0d4061c72915f13B054Ab18cC7f346319c569",
+    "liquidityLocker": "0x9889d707Df37E2396A527AfC8bF170144f1530Fe",
+    "hookCreate2Deployer": "0x8C28a10f3d618cac580A1bE436Fac6804922C673",
+    "hook": "0xB8fed88026B939Cf0161b95F6456e47a5CD02080",
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "positionManager": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "wrappedNative": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "launchPriceOracle": "0x10cDD084B81Ce0D7dd2dBE4515F3aCf198B3f47c"
+  },
+  "parameters": {
+    "tokenDecimals": 18,
+    "totalSupplyTokens": "1000000000",
+    "liquidCapBps": 200,
+    "liquidCapTokens": "20000000",
+    "tradingFeeBps": 100,
+    "vestingDurationSeconds": 2592000,
+    "graduationThresholdWei": "5000000000000000000",
+    "feeSplitBps": {
+      "protocol": 1500,
+      "creator": 3500,
+      "holders": 5000
+    }
+  }
+}
