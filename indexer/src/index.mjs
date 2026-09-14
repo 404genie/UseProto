@@ -20,6 +20,7 @@ const CHUNK_SIZE = Number(process.env.INDEXER_CHUNK_SIZE || 2_000);
 const LOG_CONCURRENCY = Number(process.env.INDEXER_LOG_CONCURRENCY || 2);
 const CURVE_CONCURRENCY = Number(process.env.INDEXER_CURVE_CONCURRENCY || 2);
 const RPC_RETRIES = Number(process.env.INDEXER_RPC_RETRIES || 4);
+const RPC_CONCURRENCY = Math.max(1, Number(process.env.INDEXER_RPC_CONCURRENCY || 4));
 const MAX_STORED_TRADES = Number(process.env.INDEXER_MAX_STORED_TRADES || 1_000);
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -77,9 +78,27 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+let rpcActive = 0;
+const rpcQueue = [];
+
+async function acquireRpcSlot() {
+  if (rpcActive < RPC_CONCURRENCY) {
+    rpcActive += 1;
+    return;
+  }
+  await new Promise((resolve) => rpcQueue.push(resolve));
+  rpcActive += 1;
+}
+
+function releaseRpcSlot() {
+  rpcActive -= 1;
+  rpcQueue.shift()?.();
+}
+
 async function withRetry(operation, label) {
   let lastError;
   for (let attempt = 0; attempt <= RPC_RETRIES; attempt += 1) {
+    const release = await acquireRpcSlot();
     try {
       return await operation();
     } catch (error) {
@@ -90,6 +109,8 @@ async function withRetry(operation, label) {
       const delay = Math.min(8_000, 250 * 2 ** attempt);
       console.warn(`rpc retry ${label} (${attempt + 1}/${RPC_RETRIES}) in ${delay}ms: ${message}`);
       await sleep(delay);
+    } finally {
+      release();
     }
   }
   throw lastError;
