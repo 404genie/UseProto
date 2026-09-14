@@ -20,9 +20,25 @@ const money = (value = 0) => {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(amount);
 };
 const age = (value) => value || "just now";
+const tokenAmount = (value) => {
+  try {
+    const amount = Number(ethers.formatUnits(BigInt(value || 0), 18));
+    if (!Number.isFinite(amount)) return "—";
+    return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  } catch {
+    return "—";
+  }
+};
+const tradeTime = (timestamp) => {
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(timestamp || 0));
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86_400)}d ago`;
+};
 
 function Logo({ compact = false }) {
-  return <a className={`brand ${compact ? "brand-compact" : ""}`} href="#/explore" aria-label="Proto home"><img src="/proto-mark.png" alt="" className="brand-mark" /><span className="brand-wordmark"><img src="/proto-wordmark.png" alt="Proto" /></span></a>;
+  return <a className={`brand ${compact ? "brand-compact" : ""}`} href="#/explore" aria-label="Proto home"><img src="/proto-mark.png" alt="" className="brand-mark" /><span className="brand-wordmark"><img src="/proto-wordmark-cropped.png" alt="Proto" /></span></a>;
 }
 
 function WalletButton({ address, onConnect, onOpenProfile }) {
@@ -79,6 +95,10 @@ function LineChart({ points = [] }) {
   return <div className="chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Token price chart"><defs><linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#f4ff18" stopOpacity=".26" /><stop offset="1" stopColor="#f4ff18" stopOpacity="0" /></linearGradient></defs><polyline className="chart-area" points={area} /><polyline className="chart-line" points={coords} /></svg><div className="chart-axis"><span>1D</span><span>1W</span><span>1M</span><span>ALL</span></div></div>;
 }
 
+function TradeActivity({ trades = [], symbol }) {
+  return <section className="activity-panel"><div className="section-heading"><h2>Recent activity</h2><span>{trades.length}</span></div>{trades.length ? <div className="activity-list"><div className="activity-header"><span>Type</span><span>Trader</span><span>Amount</span><span>Time</span></div>{trades.slice(0, 20).map((trade, index) => <div className="activity-row" key={`${trade.txHash || "trade"}-${index}`}><strong className={trade.side === "buy" ? "positive" : "negative"}>{trade.side === "buy" ? "Buy" : "Sell"}</strong><a href={`#/profile/${trade.trader}`} className="activity-trader">{trade.trader ? shorten(trade.trader) : "—"}</a><span>{tokenAmount(trade.tokenAmount)} {symbol}</span><span>{tradeTime(trade.timestamp)}</span></div>)}</div> : <div className="empty-state">Buys and sells will appear here as this token trades.</div>}</section>;
+}
+
 function Trade({ tokenAddress, txClient, onOpenProfile, onConnect }) {
   const [token, setToken] = useState(null);
   const [mode, setMode] = useState("buy");
@@ -87,7 +107,22 @@ function Trade({ tokenAddress, txClient, onOpenProfile, onConnect }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  useEffect(() => { let active = true; fetchToken(tokenAddress).then((item) => active && setToken(item)); return () => { active = false; }; }, [tokenAddress]);
+  const [walletBalance, setWalletBalance] = useState(0n);
+  useEffect(() => { let active = true; const load = async () => { const item = await fetchToken(tokenAddress); if (active) setToken(item); }; load(); const timer = setInterval(load, 15000); return () => { active = false; clearInterval(timer); }; }, [tokenAddress]);
+  useEffect(() => {
+    let active = true;
+    const loadBalance = async () => {
+      if (!txClient || !token || mode !== "sell") return setWalletBalance(0n);
+      try {
+        const account = await txClient.account();
+        const contract = new ethers.Contract(token.token, ["function balanceOf(address) view returns (uint256)"], txClient.provider);
+        const balance = await contract.balanceOf(account);
+        if (active) setWalletBalance(BigInt(balance));
+      } catch { if (active) setWalletBalance(0n); }
+    };
+    loadBalance();
+    return () => { active = false; };
+  }, [token, txClient, mode]);
   useEffect(() => {
     let active = true;
     const quote = async () => {
@@ -139,12 +174,13 @@ function Trade({ tokenAddress, txClient, onOpenProfile, onConnect }) {
         const minOut = quoteOut * 98n / 100n;
         const tx = isGraduated ? await txClient.sellV4({ token: token.token, tokenIn, minQuoteOut: minOut, deadline }) : await txClient.sell({ curve: token.curve, tokenIn, minQuoteOut: minOut, deadline });
         await tx.wait();
+        setWalletBalance((current) => current > tokenIn ? current - tokenIn : 0n);
       }
       setMessage("Trade confirmed on Robinhood Chain."); setAmount("");
     } catch (error) { setMessage(error.shortMessage || error.message || "Trade failed"); } finally { setBusy(false); }
   };
   const output = estimate == null ? "0.00" : mode === "buy" ? Number(ethers.formatUnits(estimate, 18)).toLocaleString(undefined, { maximumFractionDigits: 2 }) : Number(ethers.formatEther(estimate)).toLocaleString(undefined, { maximumFractionDigits: 5 });
-  return <main className="page trade-page"><div className="trade-breadcrumb"><a href="#/explore">Explore</a><span>/</span><strong>${token.symbol}</strong></div><section className="trade-heading"><div className="trade-token-title"><TokenImage token={token} large /><div><div className="eyebrow">{token.status === "graduated" ? "UNISWAP V4 MARKET" : "PROTO BONDING CURVE"}</div><h1>{token.name} <span>${token.symbol}</span></h1><button className="ca-button" onClick={copy}>CA {shorten(token.token)} <span>{copied ? "Copied" : "▣"}</span></button></div></div><button className="creator-link" onClick={() => onOpenProfile(token.creator)}><span className="mini-avatar"><img src="/proto-mark.png" alt="" /></span> Created by {shorten(token.creator)} ↗</button></section><div className="trade-layout"><section className="chart-panel"><div className="chart-stats"><div><span>Market cap</span><strong>{money(token.marketCap)}</strong></div><div><span>24h volume</span><strong>{money(token.volume1h * 10)}</strong></div><div><span>Token age</span><strong>{age(token.age)}</strong></div><div className={token.change >= 0 ? "positive" : "negative"}><span>All time</span><strong>{token.change >= 0 ? "+" : ""}{token.change.toFixed(1)}%</strong></div></div><LineChart points={token.chart} /></section><section className="swap-panel"><div className="swap-tabs"><button className={mode === "buy" ? "active" : ""} onClick={() => { setMode("buy"); setEstimate(null); }}>Buy</button><button className={mode === "sell" ? "active" : ""} onClick={() => { setMode("sell"); setEstimate(null); }}>Sell</button></div><div className="swap-caption">{mode === "buy" ? "Buy with native ETH" : "Sell liquid tokens"}</div><label className="swap-input"><span>{mode === "buy" ? "You pay" : "You sell"}</span><input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /><strong>{mode === "buy" ? "ETH" : token.symbol}</strong></label><div className="swap-arrow">↓</div><div className="swap-input output"><span>Estimated receive</span><strong>{output}</strong><strong>{mode === "buy" ? token.symbol : "ETH"}</strong></div><div className="swap-details"><span>Proto fee <b>1%</b></span><span>Liquid allocation <b>up to 2%</b></span><span>Slippage protection <b>2% buffer</b></span></div>{message && <div className="form-message">{message}</div>}<button className="primary-button full" onClick={submit} disabled={busy}>{busy ? "Confirming…" : txClient ? `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}` : `Connect wallet to ${mode}`}</button><p className="swap-note">Excess allocation is automatically committed to 30-day vesting.</p></section></div></main>;
+  return <main className="page trade-page"><div className="trade-breadcrumb"><a href="#/explore">Explore</a><span>/</span><strong>${token.symbol}</strong></div><section className="trade-heading"><div className="trade-token-title"><TokenImage token={token} large /><div><div className="eyebrow">{token.status === "graduated" ? "UNISWAP V4 MARKET" : "PROTO BONDING CURVE"}</div><h1>{token.name} <span>${token.symbol}</span></h1><button className="ca-button" onClick={copy}>CA {shorten(token.token)} <span>{copied ? "Copied" : "▣"}</span></button></div></div><button className="creator-link" onClick={() => onOpenProfile(token.creator)}><span className="mini-avatar"><img src="/proto-mark.png" alt="" /></span> Created by {shorten(token.creator)} ↗</button></section><div className="trade-layout"><section className="chart-panel"><div className="chart-stats"><div><span>Market cap</span><strong>{money(token.marketCap)}</strong></div><div><span>24h volume</span><strong>{money(token.volume1h * 10)}</strong></div><div><span>Token age</span><strong>{age(token.age)}</strong></div><div className={token.change >= 0 ? "positive" : "negative"}><span>All time</span><strong>{token.change >= 0 ? "+" : ""}{token.change.toFixed(1)}%</strong></div></div><LineChart points={token.chart} /></section><section className="swap-panel"><div className="swap-tabs"><button className={mode === "buy" ? "active" : ""} onClick={() => { setMode("buy"); setEstimate(null); }}>Buy</button><button className={mode === "sell" ? "active" : ""} onClick={() => { setMode("sell"); setEstimate(null); }}>Sell</button></div><div className="swap-caption">{mode === "buy" ? "Buy with native ETH" : "Sell liquid tokens"}</div><label className="swap-input"><span>{mode === "buy" ? "You pay" : "You sell"}</span><input value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /><strong>{mode === "buy" ? "ETH" : token.symbol}</strong></label>{mode === "sell" && <div className="quick-sell" aria-label="Quick sell percentage"><span>Quick sell</span>{[25, 50, 75, 100].map((percent) => <button type="button" key={percent} disabled={!walletBalance} onClick={() => setAmount(ethers.formatUnits(walletBalance * BigInt(percent) / 100n, 18))}>{percent}%</button>)}</div>}<div className="swap-arrow">↓</div><div className="swap-input output"><span>Estimated receive</span><strong>{output}</strong><strong>{mode === "buy" ? token.symbol : "ETH"}</strong></div><div className="swap-details"><span>Proto fee <b>1%</b></span><span>Liquid allocation <b>up to 2%</b></span><span>Slippage protection <b>2% buffer</b></span></div>{message && <div className="form-message">{message}</div>}<button className="primary-button full" onClick={submit} disabled={busy}>{busy ? "Confirming…" : txClient ? `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}` : `Connect wallet to ${mode}`}</button><p className="swap-note">Excess allocation is automatically committed to 30-day vesting.</p></section></div><TradeActivity trades={token.recentTrades} symbol={token.symbol} /></main>;
 }
 
 function Profile({ address, onConnect, onOpen, onEditProfile }) {
