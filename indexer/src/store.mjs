@@ -39,7 +39,7 @@ function openFileStore(filePath) {
 }
 
 function postgresSsl(databaseUrl) {
-  return /localhost|127\\.0\\.0\\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false };
+  return databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1") ? false : { rejectUnauthorized: false };
 }
 
 async function openPostgresStore(databaseUrl) {
