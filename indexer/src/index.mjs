@@ -40,6 +40,8 @@ const curveInterface = new ethers.Interface([
   "event Sold(address indexed seller,address indexed recipient,uint256 tokenIn,uint256 quoteOut,uint256 fee)"
 ]);
 const routerInterface = new ethers.Interface([
+  "event ProtectedBuy(address indexed curve,address indexed buyer,address indexed recipient,uint256 total,uint256 liquid,uint256 committed)",
+  "event ProtectedSell(address indexed curve,address indexed seller,address indexed recipient,uint256 tokenIn,uint256 quoteOut)",
   "event ProtectedV4Buy(address indexed token,address indexed buyer,address indexed recipient,uint256 quoteIn,uint256 total,uint256 liquid,uint256 committed)",
   "event ProtectedV4Sell(address indexed token,address indexed seller,address indexed recipient,uint256 tokenIn,uint256 quoteOut)"
 ]);
@@ -178,14 +180,15 @@ async function hydrateToken(record) {
 async function addTrade(record, trade) {
   const timestamp = await blockTimestamp(trade.blockNumber);
   const quoteWei = BigInt(trade.quoteWei);
+  const tokenAmount = BigInt(trade.tokenAmount || 0n);
   const launchPrice = BigInt(record.launchPriceUsd8 || "0");
-  const priceUsd = trade.tokenAmount > 0n
-    ? Number(ethers.formatEther(quoteWei)) / Number(ethers.formatUnits(trade.tokenAmount, 18)) * Number(launchPrice) / 1e8
+  const priceUsd = tokenAmount > 0n
+    ? Number(ethers.formatEther(quoteWei)) / Number(ethers.formatUnits(tokenAmount, 18)) * Number(launchPrice) / 1e8
     : 0;
   record.trades.push({
     timestamp,
     quoteWei: quoteWei.toString(),
-    tokenAmount: BigInt(trade.tokenAmount || 0n).toString(),
+    tokenAmount: tokenAmount.toString(),
     priceUsd,
     side: trade.side,
     trader: trade.trader || "",
@@ -218,28 +221,71 @@ async function processCoreLogs(logs) {
   }
 }
 
-async function processRouterLogs(logs) {
+async function processRouterLogs(logs, curveActors) {
   for (const log of logs) {
     const parsed = routerInterface.parseLog(log);
+    if (parsed.name === "ProtectedBuy") {
+      curveActors.set(
+        `${log.transactionHash}:buy:${parsed.args.curve.toLowerCase()}`,
+        ethers.getAddress(parsed.args.buyer)
+      );
+      continue;
+    }
+    if (parsed.name === "ProtectedSell") {
+      curveActors.set(
+        `${log.transactionHash}:sell:${parsed.args.curve.toLowerCase()}`,
+        ethers.getAddress(parsed.args.seller)
+      );
+      continue;
+    }
+
     const record = tokenRecord(parsed.args.token);
     if (parsed.name === "ProtectedV4Buy") {
-      await addTrade(record, { blockNumber: log.blockNumber, txHash: log.transactionHash, quoteWei: parsed.args.quoteIn, tokenAmount: parsed.args.total, side: "buy", trader: parsed.args.buyer });
-    } else {
-      await addTrade(record, { blockNumber: log.blockNumber, txHash: log.transactionHash, quoteWei: parsed.args.quoteOut, tokenAmount: parsed.args.tokenIn, side: "sell", trader: parsed.args.seller });
+      await addTrade(record, {
+        blockNumber: log.blockNumber,
+        txHash: log.transactionHash,
+        quoteWei: parsed.args.quoteIn,
+        tokenAmount: parsed.args.total,
+        side: "buy",
+        trader: parsed.args.buyer
+      });
+    } else if (parsed.name === "ProtectedV4Sell") {
+      await addTrade(record, {
+        blockNumber: log.blockNumber,
+        txHash: log.transactionHash,
+        quoteWei: parsed.args.quoteOut,
+        tokenAmount: parsed.args.tokenIn,
+        side: "sell",
+        trader: parsed.args.seller
+      });
     }
   }
 }
 
-async function processCurveLogs(logs, curveToToken) {
+async function processCurveLogs(logs, curveToToken, curveActors) {
   for (const log of logs) {
     const parsed = curveInterface.parseLog(log);
     const token = curveToToken.get(log.address.toLowerCase());
     if (!token) continue;
     const record = tokenRecord(token);
     if (parsed.name === "Bought") {
-      await addTrade(record, { blockNumber: log.blockNumber, txHash: log.transactionHash, quoteWei: parsed.args.quoteIn - parsed.args.fee, tokenAmount: parsed.args.tokenOut, side: "buy", trader: parsed.args.buyer });
+      await addTrade(record, {
+        blockNumber: log.blockNumber,
+        txHash: log.transactionHash,
+        quoteWei: parsed.args.quoteIn - parsed.args.fee,
+        tokenAmount: parsed.args.tokenOut,
+        side: "buy",
+        trader: curveActors.get(`${log.transactionHash}:buy:${log.address.toLowerCase()}`)
+      });
     } else {
-      await addTrade(record, { blockNumber: log.blockNumber, txHash: log.transactionHash, quoteWei: parsed.args.quoteOut, tokenAmount: parsed.args.tokenIn, side: "sell", trader: parsed.args.seller });
+      await addTrade(record, {
+        blockNumber: log.blockNumber,
+        txHash: log.transactionHash,
+        quoteWei: parsed.args.quoteOut,
+        tokenAmount: parsed.args.tokenIn,
+        side: "sell",
+        trader: curveActors.get(`${log.transactionHash}:sell:${log.address.toLowerCase()}`)
+      });
     }
   }
 }
@@ -248,13 +294,15 @@ async function sync() {
   const latest = await provider.getBlockNumber();
   const startBlock = state.lastBlock == null ? Number(process.env.PROTO_INDEXER_START_BLOCK || Math.max(0, latest - 5_000)) : state.lastBlock + 1;
   if (startBlock > latest) return { latest, indexedThrough: state.lastBlock, discovered: Object.keys(state.tokens).length, scanned: 0 };
-  const [registered, graduated, v4Buys, v4Sells] = await Promise.all([
+  const [registered, graduated, protectedBuys, protectedSells, v4Buys, v4Sells] = await Promise.all([
     scanLogs(core, coreInterface, "TokenRegistered", startBlock, latest),
     graduationManager ? scanLogs(graduationManager, coreInterface, "Graduated", startBlock, latest) : [],
+    scanLogs(router, routerInterface, "ProtectedBuy", startBlock, latest),
+    scanLogs(router, routerInterface, "ProtectedSell", startBlock, latest),
     scanLogs(router, routerInterface, "ProtectedV4Buy", startBlock, latest),
     scanLogs(router, routerInterface, "ProtectedV4Sell", startBlock, latest)
   ]);
-  console.log(`backfill ${startBlock}-${latest}: registered=${registered.length} graduated=${graduated.length} v4Buys=${v4Buys.length} v4Sells=${v4Sells.length}`);
+  console.log(`backfill ${startBlock}-${latest}: registered=${registered.length} graduated=${graduated.length} buys=${protectedBuys.length} sells=${protectedSells.length} v4Buys=${v4Buys.length} v4Sells=${v4Sells.length}`);
   await processCoreLogs([...registered, ...graduated].sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index));
   const curves = new Map(Object.values(state.tokens).filter((record) => record.curve).map((record) => [record.curve.toLowerCase(), record.token]));
   const curveLogs = [];
@@ -262,8 +310,20 @@ async function sync() {
     curveLogs.push(...await scanLogs(curve, curveInterface, "Bought", startBlock, latest));
     curveLogs.push(...await scanLogs(curve, curveInterface, "Sold", startBlock, latest));
   }
-  await processCurveLogs(curveLogs.sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index), curves);
-  await processRouterLogs([...v4Buys, ...v4Sells].sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index));
+  const curveActors = new Map();
+  await processRouterLogs(
+    [...protectedBuys, ...protectedSells].sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index),
+    curveActors
+  );
+  await processCurveLogs(
+    curveLogs.sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index),
+    curves,
+    curveActors
+  );
+  await processRouterLogs(
+    [...v4Buys, ...v4Sells].sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index),
+    curveActors
+  );
   for (const record of Object.values(state.tokens)) await hydrateToken(record);
   state.lastBlock = latest;
   store.save();
@@ -272,6 +332,15 @@ async function sync() {
 
 function publicToken(record) {
   const result = { ...record };
+  result.recentTrades = (record.trades || []).slice(-30).reverse().map((trade) => ({
+    timestamp: trade.timestamp,
+    side: trade.side,
+    trader: trade.trader ? ethers.getAddress(trade.trader) : "",
+    tokenAmount: trade.tokenAmount || "0",
+    quoteUsd: usdFromWei(BigInt(trade.quoteWei || "0"), BigInt(record.launchPriceUsd8 || "0")),
+    priceUsd: trade.priceUsd,
+    txHash: trade.txHash
+  }));
   delete result.volumeAllTimeWei; delete result.volume1hWei; delete result.volume5mWei; delete result.trades;
   if (!result.hydrationError) delete result.hydrationError;
   result.token = ethers.getAddress(record.token);
@@ -279,15 +348,6 @@ function publicToken(record) {
   if (record.curve) result.curve = ethers.getAddress(record.curve);
   result.status = record.lifecycle === 3 ? "graduated" : "curve";
   result.change = 0;
-  result.recentTrades = (record.trades || []).slice(-30).reverse().map((trade) => ({
-    timestamp: trade.timestamp,
-    side: trade.side,
-    trader: trade.trader ? ethers.getAddress(trade.trader) : "",
-    tokenAmount: trade.tokenAmount || "0",
-    quoteUsd: usdFromWei(BigInt(trade.quoteWei || "0"), BigInt(record.launchPriceUsd8 || "0")),
-    priceUsd: trade.priceUsd || 0,
-    txHash: trade.txHash
-  }));
   return result;
 }
 
