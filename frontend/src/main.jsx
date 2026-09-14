@@ -198,7 +198,7 @@ function App() {
   const open = (token) => { window.location.hash = `#/token/${token}`; };
   const openProfile = (user = address) => { window.location.hash = user ? `#/profile/${user}` : "#/profile"; };
   const page = useMemo(() => { if (route.startsWith("#/create")) return <Create address={address} txClient={txClient} onConnect={connect} onCreated={() => { window.location.hash = "#/explore"; }} />; if (route.startsWith("#/token/")) return <Trade tokenAddress={route.split("/")[2]} txClient={txClient} onOpenProfile={openProfile} onConnect={connect} />; if (route.startsWith("#/profile")) return <Profile address={route.split("/")[2] || address} onConnect={connect} onOpen={open} onEditProfile={() => setProfilePrompt(true)} />; return <Explore onOpen={open} onCreate={() => { window.location.hash = "#/create"; }} />; }, [route, address, txClient]);
-  return <><Header address={address} onConnect={connect} onOpenProfile={() => openProfile(address)} />{page}<footer><Logo compact /><span>Permissionless launches on Robinhood Chain.</span><a href="https://github.com" target="_blank" rel="noreferrer">Docs ↗</a></footer>{profilePrompt && <ProfilePrompt address={address} onSave={saveProfile} onSkip={() => setProfilePrompt(false)} />}</>;
+  return <><Header address={address} onConnect={connect} onOpenProfile={() => openProfile(address)} />{page}<footer><Logo compact /><span>Permissionless launches on Robinhood Chain.</span><a href="https://github.com/404genie/UseProto" target="_blank" rel="noreferrer">Docs ↗</a></footer>{profilePrompt && <ProfilePrompt address={address} onSave={saveProfile} onSkip={() => setProfilePrompt(false)} />}</>;
 }
 
 createRoot(document.getElementById("root")).render(<App />);
