@@ -3,7 +3,7 @@ import process from "node:process";
 import { ethers, JsonRpcProvider } from "ethers";
 import { openStore } from "./store.mjs";
 
-const RPC_URL = process.env.RH_RPC_URL || process.env.VITE_RH_RPC_URL;
+const RPC_URL = process.env.INDEXER_RPC_URL || process.env.RH_RPC_URL || process.env.VITE_RH_RPC_URL;
 const CORE_ADDRESS = process.env.PROTO_CORE;
 const ROUTER_ADDRESS = process.env.PROTO_ROUTER;
 const GRADUATION_MANAGER = process.env.GRADUATION_MANAGER || "";
@@ -16,7 +16,12 @@ const ALLOWED_ORIGIN = process.env.INDEXER_ALLOWED_ORIGIN || "*";
 const UPLOAD_MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES || 5 * 1024 * 1024);
 const UPLOAD_WINDOW_MS = 60_000;
 const UPLOAD_MAX_PER_WINDOW = Number(process.env.UPLOAD_MAX_PER_WINDOW || 10);
-const CHUNK_SIZE = 2_000;
+const CHUNK_SIZE = Number(process.env.INDEXER_CHUNK_SIZE || 2_000);
+const LOG_CONCURRENCY = Number(process.env.INDEXER_LOG_CONCURRENCY || 2);
+const CURVE_CONCURRENCY = Number(process.env.INDEXER_CURVE_CONCURRENCY || 2);
+const RPC_RETRIES = Number(process.env.INDEXER_RPC_RETRIES || 4);
+const RPC_CONCURRENCY = Math.max(1, Number(process.env.INDEXER_RPC_CONCURRENCY || 4));
+const MAX_STORED_TRADES = Number(process.env.INDEXER_MAX_STORED_TRADES || 1_000);
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 if (!RPC_URL || !CORE_ADDRESS || !ROUTER_ADDRESS) {
@@ -25,7 +30,7 @@ if (!RPC_URL || !CORE_ADDRESS || !ROUTER_ADDRESS) {
 
 const chainId = Number(process.env.CHAIN_ID ?? "4663");
 const provider = new JsonRpcProvider(RPC_URL, chainId);
-const store = openStore(STATE_PATH);
+const store = await openStore(STATE_PATH);
 const state = store.state;
 const core = ethers.getAddress(CORE_ADDRESS);
 const router = ethers.getAddress(ROUTER_ADDRESS);
@@ -69,9 +74,70 @@ const cache = new Map();
 const uploadWindows = new Map();
 let lastSync = null;
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let rpcActive = 0;
+const rpcQueue = [];
+
+async function acquireRpcSlot() {
+  if (rpcActive < RPC_CONCURRENCY) {
+    rpcActive += 1;
+    return;
+  }
+  await new Promise((resolve) => rpcQueue.push(resolve));
+  rpcActive += 1;
+}
+
+function releaseRpcSlot() {
+  rpcActive -= 1;
+  rpcQueue.shift()?.();
+}
+
+async function withRetry(operation, label) {
+  let lastError;
+  for (let attempt = 0; attempt <= RPC_RETRIES; attempt += 1) {
+    await acquireRpcSlot();
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.shortMessage || error?.message || error);
+      const retryable = /429|rate|timeout|temporar|network|502|503|504|ECONNRESET|ETIMEDOUT/i.test(message);
+      if (!retryable || attempt === RPC_RETRIES) throw error;
+      const delay = Math.min(8_000, 250 * 2 ** attempt);
+      console.warn(`rpc retry ${label} (${attempt + 1}/${RPC_RETRIES}) in ${delay}ms: ${message}`);
+      await sleep(delay);
+    } finally {
+      releaseRpcSlot();
+    }
+  }
+  throw lastError;
+}
+
+async function mapLimit(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function run() {
+    while (true) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  const workers = Math.min(Math.max(1, limit), items.length);
+  await Promise.all(Array.from({ length: workers }, () => run()));
+  return results;
+}
+
 function call(address, iface, functionName, args = []) {
   const data = iface.encodeFunctionData(functionName, args);
-  return provider.call({ to: address, data }).then((result) => iface.decodeFunctionResult(functionName, result));
+  return withRetry(
+    () => provider.call({ to: address, data }).then((result) => iface.decodeFunctionResult(functionName, result)),
+    `call ${functionName}`
+  );
 }
 
 function parseMetadata(metadataURI) {
@@ -103,17 +169,25 @@ function usdFromWei(wei, launchPriceUsd8) {
 }
 
 async function blockTimestamp(blockNumber) {
-  if (!cache.has(blockNumber)) cache.set(blockNumber, provider.getBlock(blockNumber).then((block) => Number(block?.timestamp || 0)));
+  if (!cache.has(blockNumber)) {
+    cache.set(blockNumber, withRetry(
+      () => provider.getBlock(blockNumber).then((block) => Number(block?.timestamp || 0)),
+      `getBlock ${blockNumber}`
+    ));
+  }
   return cache.get(blockNumber);
 }
 
 async function scanLogs(address, iface, eventName, fromBlock, toBlock) {
-  const logs = [];
+  const chunks = [];
   for (let start = fromBlock; start <= toBlock; start += CHUNK_SIZE) {
-    const end = Math.min(toBlock, start + CHUNK_SIZE - 1);
-    logs.push(...await provider.getLogs({ address, topics: [topic(iface, eventName)], fromBlock: start, toBlock: end }));
+    chunks.push({ start, end: Math.min(toBlock, start + CHUNK_SIZE - 1) });
   }
-  return logs;
+  const batches = await mapLimit(chunks, LOG_CONCURRENCY, ({ start, end }) => withRetry(
+    () => provider.getLogs({ address, topics: [topic(iface, eventName)], fromBlock: start, toBlock: end }),
+    `getLogs ${eventName} ${start}-${end}`
+  ));
+  return batches.flat();
 }
 
 async function hydrateToken(record) {
@@ -185,8 +259,13 @@ async function addTrade(record, trade) {
   const priceUsd = tokenAmount > 0n
     ? Number(ethers.formatEther(quoteWei)) / Number(ethers.formatUnits(tokenAmount, 18)) * Number(launchPrice) / 1e8
     : 0;
+  const tradeKey = `${trade.txHash}:${trade.logIndex ?? 0}`;
+  if (record.trades.some((item) => item.tradeKey === tradeKey)) return;
   record.trades.push({
+    tradeKey,
     timestamp,
+    blockNumber: Number(trade.blockNumber),
+    logIndex: Number(trade.logIndex ?? 0),
     quoteWei: quoteWei.toString(),
     tokenAmount: tokenAmount.toString(),
     priceUsd,
@@ -194,6 +273,9 @@ async function addTrade(record, trade) {
     trader: trade.trader || "",
     txHash: trade.txHash
   });
+  if (record.trades.length > MAX_STORED_TRADES) {
+    record.trades.splice(0, record.trades.length - MAX_STORED_TRADES);
+  }
   record.volumeAllTimeWei = (BigInt(record.volumeAllTimeWei || "0") + quoteWei).toString();
   const now = Math.floor(Date.now() / 1000);
   record.volume1hWei = (BigInt(record.volume1hWei || "0") + (now - timestamp <= 3600 ? quoteWei : 0n)).toString();
@@ -243,6 +325,7 @@ async function processRouterLogs(logs, curveActors) {
     if (parsed.name === "ProtectedV4Buy") {
       await addTrade(record, {
         blockNumber: log.blockNumber,
+        logIndex: log.index,
         txHash: log.transactionHash,
         quoteWei: parsed.args.quoteIn,
         tokenAmount: parsed.args.total,
@@ -252,6 +335,7 @@ async function processRouterLogs(logs, curveActors) {
     } else if (parsed.name === "ProtectedV4Sell") {
       await addTrade(record, {
         blockNumber: log.blockNumber,
+        logIndex: log.index,
         txHash: log.transactionHash,
         quoteWei: parsed.args.quoteOut,
         tokenAmount: parsed.args.tokenIn,
@@ -271,6 +355,7 @@ async function processCurveLogs(logs, curveToToken, curveActors) {
     if (parsed.name === "Bought") {
       await addTrade(record, {
         blockNumber: log.blockNumber,
+        logIndex: log.index,
         txHash: log.transactionHash,
         quoteWei: parsed.args.quoteIn - parsed.args.fee,
         tokenAmount: parsed.args.tokenOut,
@@ -280,6 +365,7 @@ async function processCurveLogs(logs, curveToToken, curveActors) {
     } else {
       await addTrade(record, {
         blockNumber: log.blockNumber,
+        logIndex: log.index,
         txHash: log.transactionHash,
         quoteWei: parsed.args.quoteOut,
         tokenAmount: parsed.args.tokenIn,
@@ -291,9 +377,10 @@ async function processCurveLogs(logs, curveToToken, curveActors) {
 }
 
 async function sync() {
-  const latest = await provider.getBlockNumber();
+  const latest = await withRetry(() => provider.getBlockNumber(), "getBlockNumber");
   const startBlock = state.lastBlock == null ? Number(process.env.PROTO_INDEXER_START_BLOCK || Math.max(0, latest - 5_000)) : state.lastBlock + 1;
   if (startBlock > latest) return { latest, indexedThrough: state.lastBlock, discovered: Object.keys(state.tokens).length, scanned: 0 };
+  console.log(`sync ${startBlock}-${latest}: scanning core/router logs`);
   const [registered, graduated, protectedBuys, protectedSells, v4Buys, v4Sells] = await Promise.all([
     scanLogs(core, coreInterface, "TokenRegistered", startBlock, latest),
     graduationManager ? scanLogs(graduationManager, coreInterface, "Graduated", startBlock, latest) : [],
@@ -305,11 +392,13 @@ async function sync() {
   console.log(`backfill ${startBlock}-${latest}: registered=${registered.length} graduated=${graduated.length} buys=${protectedBuys.length} sells=${protectedSells.length} v4Buys=${v4Buys.length} v4Sells=${v4Sells.length}`);
   await processCoreLogs([...registered, ...graduated].sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index));
   const curves = new Map(Object.values(state.tokens).filter((record) => record.curve).map((record) => [record.curve.toLowerCase(), record.token]));
-  const curveLogs = [];
-  for (const curve of curves.keys()) {
-    curveLogs.push(...await scanLogs(curve, curveInterface, "Bought", startBlock, latest));
-    curveLogs.push(...await scanLogs(curve, curveInterface, "Sold", startBlock, latest));
-  }
+  const curveLogs = (await mapLimit([...curves.keys()], CURVE_CONCURRENCY, async (curve) => {
+    const [bought, sold] = await Promise.all([
+      scanLogs(curve, curveInterface, "Bought", startBlock, latest),
+      scanLogs(curve, curveInterface, "Sold", startBlock, latest)
+    ]);
+    return [...bought, ...sold];
+  })).flat();
   const curveActors = new Map();
   await processRouterLogs(
     [...protectedBuys, ...protectedSells].sort((a, b) => a.blockNumber - b.blockNumber || a.index - b.index),
@@ -325,8 +414,14 @@ async function sync() {
     curveActors
   );
   for (const record of Object.values(state.tokens)) await hydrateToken(record);
+  const previousLastBlock = state.lastBlock;
   state.lastBlock = latest;
-  store.save();
+  try {
+    await store.save();
+  } catch (error) {
+    state.lastBlock = previousLastBlock;
+    throw error;
+  }
   return { latest, indexedThrough: state.lastBlock, discovered: Object.keys(state.tokens).length };
 }
 
@@ -444,6 +539,7 @@ async function handle(req, res) {
     return response(res, 200, {
       ok: true,
       chainId: 4663,
+      storage: store.kind,
       indexedThrough: state.lastBlock,
       discovered: records.length,
       hydrated: records.filter((item) => item.name && item.symbol).length,
@@ -488,7 +584,13 @@ const server = http.createServer((req, res) => {
 });
 server.listen(PORT, () => console.log(`Proto indexer listening on http://localhost:${PORT}`));
 
+let syncInFlight = false;
 async function poll() {
+  if (syncInFlight) {
+    console.warn("indexer sync still running; skipping overlapping poll");
+    return;
+  }
+  syncInFlight = true;
   try {
     const result = await sync();
     lastSync = { at: new Date().toISOString(), ...result };
@@ -496,6 +598,8 @@ async function poll() {
   } catch (error) {
     lastSync = { at: new Date().toISOString(), error: error.message };
     console.error("indexer sync failed", error);
+  } finally {
+    syncInFlight = false;
   }
 }
 await poll();

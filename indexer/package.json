@@ -8,6 +8,7 @@
     "dev": "node --env-file=.env --watch src/index.mjs"
   },
   "dependencies": {
-    "ethers": "6.17.0"
+    "ethers": "6.17.0",
+    "pg": "8.13.1"
   }
 }
