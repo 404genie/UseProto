@@ -522,6 +522,7 @@ async function uploadImage(req, res) {
   const form = new FormData();
   const fileName = String(req.headers["x-file-name"] || "token-image").replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "token-image";
   form.append("file", new Blob([body], { type: contentType }), fileName);
+  form.append("network", "public");
   const upstream = await fetch("https://uploads.pinata.cloud/v3/files", {
     method: "POST",
     headers: { Authorization: `Bearer ${PINATA_JWT}` },
